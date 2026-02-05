@@ -1,0 +1,30 @@
+services:
+  # Full training pipeline then launch UI
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    command: streamlit run src/ui/app.py --server.address 0.0.0.0 --server.port 8501
+
+  # One-shot: run the full training pipeline
+  train:
+    build: .
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    command: python scripts/run_pipeline.py --game holdem --iterations 2000 --depth 12
+    profiles:
+      - train
+
+  # One-shot: run evaluation
+  evaluate:
+    build: .
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    command: python scripts/evaluate.py --num-games 10000
+    profiles:
+      - eval
