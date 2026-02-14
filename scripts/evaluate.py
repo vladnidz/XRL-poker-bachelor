@@ -19,7 +19,7 @@ from src.explanation_engine.decision_path import DecisionPathExtractor
 from src.explanation_engine.counterfactual import CounterfactualGenerator
 from src.explanation_engine.nl_generator import NLGenerator
 from src.game_environment.holdem_features import build_features
-from config import MODEL_DIR, MINI_HULH_GAME_STRING
+from config import MODEL_DIR, GAME_STRING
 
 
 def play_game(game, tree_policy, feature_builder, opponent="random", rng=None):
@@ -156,10 +156,9 @@ def main():
     policy = DecisionTreePolicy()
     policy.load(args.model)
 
-    # Load Mini HULH
-    game = pyspiel.load_game(MINI_HULH_GAME_STRING)
+    game = pyspiel.load_game(GAME_STRING)
     feature_builder = build_features
-    game_name = "Mini Heads-Up Limit Hold'em"
+    game_name = "Reduced-Deck Heads-Up Limit Hold'em"
 
     print(f"=== Evaluation: {game_name} ===\n")
 

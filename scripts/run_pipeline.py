@@ -2,7 +2,7 @@
 Full training + evaluation pipeline.
 
 Usage:
-    python scripts/run_pipeline.py [--game holdem|leduc|kuhn] [--iterations N] [--depth N]
+    python scripts/run_pipeline.py [--iterations N] [--depth N]
 """
 
 import sys
@@ -25,16 +25,15 @@ def run(cmd):
 
 def main():
     parser = argparse.ArgumentParser(description="Full XRL poker pipeline")
-    parser.add_argument("--game", type=str, default="holdem",
-                        choices=["holdem", "leduc", "kuhn"])
-    parser.add_argument("--iterations", type=int, default=1000)
-    parser.add_argument("--depth", type=int, default=10)
+    parser.add_argument("--iterations", type=int, default=200000)
+    parser.add_argument("--depth", type=int, default=12)
     parser.add_argument("--eval-games", type=int, default=10000)
     args = parser.parse_args()
 
-    # Step 1: Train CFR+
-    run(f"python scripts/train_cfr.py --game {args.game} "
-        f"--iterations {args.iterations} --checkpoint-every {max(1, args.iterations // 5)}")
+    # Step 1: Train MCCFR
+    run(f"python scripts/train_cfr.py "
+        f"--iterations {args.iterations} "
+        f"--checkpoint-every {max(1, args.iterations // 4)}")
 
     # Step 2: Generate training data (full traversal for exact coverage)
     run("python scripts/generate_data.py --traverse")

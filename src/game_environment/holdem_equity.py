@@ -1,102 +1,92 @@
 """
-Exact equity calculator for Mini Heads-Up Limit Hold'em.
+Equity calculator and hand bucketing for reduced-deck Hold'em.
 
-Game: reduced deck (configurable ranks x suits), 2 hole cards, 1 community card.
-Hand evaluation: 3-card hands (2 hole + 1 board).
-  - Straight (all 3 ranks consecutive) beats Pair.
-  - Higher pair beats lower pair; same pair compare kickers.
-  - Straight vs straight is always a tie (only one possible straight).
-
-All equity calculations use exact enumeration (tractable for small decks).
+Uses exact enumeration for equity on a reduced deck (configurable ranks x suits).
+Hand buckets follow standard poker categorisation for interpretable features.
 """
 
-from itertools import combinations
-from collections import Counter
 import numpy as np
+from itertools import combinations
 
 # ACPC notation helpers
 ACPC_RANKS = "23456789TJQKA"
 ACPC_SUITS = "cdhs"
 
-# Display mapping: map low ACPC ranks to recognisable poker names
-# For numRanks=3: 2->J, 3->Q, 4->K;  numRanks=4: 2->J, 3->Q, 4->K, 5->A
-DISPLAY_RANKS = {0: "J", 1: "Q", 2: "K", 3: "A"}
+# Display mapping for 6-rank and 3-rank decks
+RANK_NAMES_6 = {0: "9", 1: "T", 2: "J", 3: "Q", 4: "K", 5: "A"}
+RANK_NAMES_3 = {0: "J", 1: "Q", 2: "K"}
+
+DISPLAY_RANKS = RANK_NAMES_6
 DISPLAY_SUITS = {0: "\u2663", 1: "\u2666", 2: "\u2665", 3: "\u2660"}
 
+SUIT_NAMES = {0: "c", 1: "d", 2: "h", 3: "s"}
 
-# ---------------------------------------------------------------------------
-# Card helpers
-# ---------------------------------------------------------------------------
 
-def parse_acpc_cards(card_str):
-    """Parse ACPC card string like '4d4c' into list of (rank, suit) tuples."""
+def card_display(rank, suit, num_ranks=6):
+    """Human-readable card string."""
+    rmap = RANK_NAMES_6 if num_ranks >= 6 else RANK_NAMES_3
+    return rmap.get(rank, str(rank)) + DISPLAY_SUITS.get(suit, "?")
+
+
+def parse_acpc_cards(acpc_str):
+    """
+    Parse ACPC card notation (e.g. '4d4c' or 'Kh9s') into (rank, suit) tuples.
+    In universal_poker, ranks use ACPC_RANKS indexing offset by the game's min rank.
+    """
     cards = []
-    for i in range(0, len(card_str), 2):
-        rank_char = card_str[i]
-        suit_char = card_str[i + 1]
-        rank = ACPC_RANKS.index(rank_char)
-        suit = ACPC_SUITS.index(suit_char)
-        cards.append((rank, suit))
+    i = 0
+    while i < len(acpc_str):
+        rank_ch = acpc_str[i]
+        suit_ch = acpc_str[i + 1]
+        rank_idx = ACPC_RANKS.index(rank_ch)
+        suit_idx = ACPC_SUITS.index(suit_ch)
+        cards.append((rank_idx, suit_idx))
+        i += 2
     return cards
 
 
-def card_display(card, num_ranks=3):
-    """Return human-readable card name, e.g. 'K♦'."""
-    rank, suit = card
-    return DISPLAY_RANKS.get(rank, str(rank)) + DISPLAY_SUITS.get(suit, "?")
-
-
 def all_cards(num_ranks, num_suits):
-    """Generate all cards in the deck as (rank, suit) tuples."""
+    """Generate all (rank, suit) tuples for the deck."""
     return [(r, s) for r in range(num_ranks) for s in range(num_suits)]
 
 
 # ---------------------------------------------------------------------------
-# Hand evaluation (3-card hands: 2 hole + 1 board)
+# Hand comparison (3-card hands: 2 hole + 1 board)
 # ---------------------------------------------------------------------------
 
-def evaluate_hand(hole_cards, board_card):
+def hand_strength(hole_cards, board_cards, num_ranks):
     """
-    Evaluate a 3-card poker hand (2 hole + 1 community).
-
-    Returns a tuple that can be compared with > < == :
-        (hand_type, tiebreaker1, tiebreaker2)
-    where hand_type: 1 = straight, 0 = pair.
-
-    With only 3 ranks in the game, 3 distinct ranks = straight (always 0-1-2).
-    With more ranks, a straight requires 3 consecutive ranks.
+    Evaluate a 3-card hand (2 hole + 1 board).
+    Returns (category, tiebreakers) where higher = better.
+    Categories: 3=straight, 2=pair, 1=high card
     """
-    ranks = sorted([hole_cards[0][0], hole_cards[1][0], board_card[0]])
-    unique = set(ranks)
+    ranks = sorted([hole_cards[0][0], hole_cards[1][0], board_cards[0][0]],
+                   reverse=True)
+    unique_ranks = set(ranks)
 
-    if len(unique) == 3:
-        # Check if consecutive
-        if ranks[2] - ranks[0] == 2:
-            # Straight — all straights tie (same set of ranks)
-            return (1, ranks[2], 0)
-        else:
-            # Three different non-consecutive ranks → high card
-            return (-1, ranks[2], ranks[1])
-    elif len(unique) == 2:
-        # Pair
+    # Straight: all 3 ranks consecutive
+    if len(unique_ranks) == 3 and ranks[0] - ranks[2] == 2:
+        return (3, ranks)
+
+    # Pair
+    if len(unique_ranks) == 2:
+        from collections import Counter
         cnt = Counter(ranks)
         pair_rank = [r for r, c in cnt.items() if c == 2][0]
         kicker = [r for r, c in cnt.items() if c == 1][0]
-        return (0, pair_rank, kicker)
-    else:
-        # Three of a kind (only possible with >= 3 suits per rank)
-        return (2, ranks[0], 0)
+        return (2, [pair_rank, kicker])
+
+    # High card
+    return (1, ranks)
 
 
-def determine_winner(my_hole, opp_hole, board_card):
-    """
-    Returns: +1 if my hand wins, -1 if opponent wins, 0 if tie.
-    """
-    my_val = evaluate_hand(my_hole, board_card)
-    opp_val = evaluate_hand(opp_hole, board_card)
-    if my_val > opp_val:
+def compare_hands(hero_hole, opp_hole, board, num_ranks):
+    """Compare two hands. Returns +1 hero wins, -1 opp wins, 0 tie."""
+    hero_str = hand_strength(hero_hole, board, num_ranks)
+    opp_str = hand_strength(opp_hole, board, num_ranks)
+    if hero_str > opp_str:
         return 1
-    elif my_val < opp_val:
+    elif hero_str < opp_str:
         return -1
     return 0
 
@@ -105,27 +95,18 @@ def determine_winner(my_hole, opp_hole, board_card):
 # Equity calculations
 # ---------------------------------------------------------------------------
 
-def compute_equity_preflop(my_hole, num_ranks=3, num_suits=2):
-    """
-    Exact preflop equity: enumerate all (opponent_hand, board_card) combos.
-
-    Args:
-        my_hole: tuple of 2 cards, each (rank, suit)
-        num_ranks, num_suits: deck parameters
-
-    Returns:
-        float in [0, 1]
-    """
+def compute_equity_preflop(hole_cards, num_ranks=6, num_suits=4):
+    """Preflop equity via enumeration of all opponent + board combos."""
     deck = all_cards(num_ranks, num_suits)
-    remaining = [c for c in deck if c not in my_hole]
+    known = set(hole_cards)
+    remaining = [c for c in deck if c not in known]
 
     wins = ties = total = 0
-
-    for opp_hand in combinations(remaining, 2):
-        leftover = [c for c in remaining if c not in opp_hand]
-        for board_card in leftover:
-            result = determine_winner(my_hole, opp_hand, board_card)
-            if result == 1:
+    for opp in combinations(remaining, 2):
+        leftover = [c for c in remaining if c not in opp]
+        for board in leftover:
+            result = compare_hands(hole_cards, opp, [board], num_ranks)
+            if result > 0:
                 wins += 1
             elif result == 0:
                 ties += 1
@@ -134,27 +115,16 @@ def compute_equity_preflop(my_hole, num_ranks=3, num_suits=2):
     return (wins + 0.5 * ties) / total if total > 0 else 0.5
 
 
-def compute_equity_postflop(my_hole, board_card, num_ranks=3, num_suits=2):
-    """
-    Exact postflop equity: enumerate all possible opponent hands.
-
-    Args:
-        my_hole: tuple of 2 cards
-        board_card: single (rank, suit) card
-        num_ranks, num_suits: deck parameters
-
-    Returns:
-        float in [0, 1]
-    """
+def compute_equity_postflop(hole_cards, board_card, num_ranks=6, num_suits=4):
+    """Postflop equity via enumeration of all opponent hands."""
     deck = all_cards(num_ranks, num_suits)
-    known = list(my_hole) + [board_card]
+    known = set(hole_cards) | {board_card}
     remaining = [c for c in deck if c not in known]
 
     wins = ties = total = 0
-
-    for opp_hand in combinations(remaining, 2):
-        result = determine_winner(my_hole, opp_hand, board_card)
-        if result == 1:
+    for opp in combinations(remaining, 2):
+        result = compare_hands(hole_cards, opp, [board_card], num_ranks)
+        if result > 0:
             wins += 1
         elif result == 0:
             ties += 1
@@ -163,25 +133,91 @@ def compute_equity_postflop(my_hole, board_card, num_ranks=3, num_suits=2):
     return (wins + 0.5 * ties) / total if total > 0 else 0.5
 
 
-def compute_future_equity_distribution(my_hole, num_ranks=3, num_suits=2):
-    """
-    Preflop: for each possible board card, compute postflop equity.
-    Returns sorted list of equity values.
-    """
+def compute_future_equity_distribution(hole_cards, num_ranks=6, num_suits=4):
+    """Compute equity for each possible board card. Returns sorted list."""
     deck = all_cards(num_ranks, num_suits)
-    remaining = [c for c in deck if c not in my_hole]
-
+    remaining = [c for c in deck if c not in hole_cards]
     equities = []
     for board_card in remaining:
-        eq = compute_equity_postflop(my_hole, board_card, num_ranks, num_suits)
+        eq = compute_equity_postflop(hole_cards, board_card, num_ranks, num_suits)
         equities.append(eq)
     return sorted(equities)
 
 
-def equity_deciles(distribution, n=10):
-    """Convert an equity distribution into n quantile values."""
+def equity_deciles(distribution, n_deciles=10):
+    """Convert equity distribution into decile values."""
     if not distribution:
-        return [0.5] * n
+        return [0.5] * n_deciles
     arr = np.array(distribution)
-    percentiles = np.linspace(100 / n, 100, n)
+    percentiles = np.linspace(100 / n_deciles, 100, n_deciles)
     return [float(np.percentile(arr, p)) for p in percentiles]
+
+
+# ---------------------------------------------------------------------------
+# Hand bucketing (postflop categories)
+# ---------------------------------------------------------------------------
+
+HAND_BUCKET_VALUES = {
+    "set": 8,
+    "overpair": 7,
+    "top_pair_top_kicker": 6,
+    "top_pair_weak_kicker": 5,
+    "middle_pair": 4,
+    "underpair": 3,
+    "overcards": 2,
+    "air": 1,
+    "pocket_pair": 5,
+    "connectors": 3,
+    "high_card": 2,
+}
+
+
+def classify_hand(hole_cards, board_cards, num_ranks=6):
+    """
+    Classify a hand into a standard poker bucket.
+
+    Returns:
+        (bucket_name: str, bucket_value: int)
+    """
+    if not board_cards:
+        # Preflop buckets
+        r0, r1 = hole_cards[0][0], hole_cards[1][0]
+        if r0 == r1:
+            return ("pocket_pair", HAND_BUCKET_VALUES["pocket_pair"])
+        elif abs(r0 - r1) == 1:
+            return ("connectors", HAND_BUCKET_VALUES["connectors"])
+        else:
+            return ("high_card", HAND_BUCKET_VALUES["high_card"])
+
+    h0_rank = hole_cards[0][0]
+    h1_rank = hole_cards[1][0]
+    board_rank = board_cards[0][0]
+    hole_sorted = sorted([h0_rank, h1_rank], reverse=True)
+    max_hole = hole_sorted[0]
+    min_hole = hole_sorted[1]
+
+    # Set: pocket pair matches board
+    if h0_rank == h1_rank == board_rank:
+        return ("set", HAND_BUCKET_VALUES["set"])
+
+    # Pocket pair, no match with board
+    if h0_rank == h1_rank:
+        if h0_rank > board_rank:
+            return ("overpair", HAND_BUCKET_VALUES["overpair"])
+        else:
+            return ("underpair", HAND_BUCKET_VALUES["underpair"])
+
+    # One hole card pairs the board
+    if h0_rank == board_rank or h1_rank == board_rank:
+        kicker = h1_rank if h0_rank == board_rank else h0_rank
+        mid_rank = (num_ranks - 1) / 2.0
+        if kicker >= mid_rank:
+            return ("top_pair_top_kicker", HAND_BUCKET_VALUES["top_pair_top_kicker"])
+        else:
+            return ("top_pair_weak_kicker", HAND_BUCKET_VALUES["top_pair_weak_kicker"])
+
+    # No pair
+    if min_hole > board_rank:
+        return ("overcards", HAND_BUCKET_VALUES["overcards"])
+
+    return ("air", HAND_BUCKET_VALUES["air"])

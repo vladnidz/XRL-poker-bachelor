@@ -1,10 +1,10 @@
 """
-Script 2: Generate training data from the converged CFR+ strategy.
+Script 2: Generate training data from the converged MCCFR strategy.
 
-Uses equity-based features (not raw tensors) for interpretability.
+Uses equity-based features with hand bucketing for interpretability.
 
 Usage:
-    python scripts/generate_data.py [--cfr-model PATH] [--samples N]
+    python scripts/generate_data.py [--cfr-model PATH] [--samples N] [--traverse]
 """
 
 import sys
@@ -20,10 +20,10 @@ from config import MODEL_DIR, DATA_DIR
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate training data from CFR+")
+    parser = argparse.ArgumentParser(description="Generate training data from MCCFR")
     parser.add_argument("--cfr-model", type=str,
                         default=os.path.join(MODEL_DIR, "cfr_final.pkl"),
-                        help="Path to CFR+ checkpoint")
+                        help="Path to MCCFR checkpoint")
     parser.add_argument("--samples", type=int, default=100000,
                         help="Number of game rollouts to sample")
     parser.add_argument("--traverse", action="store_true",
@@ -35,26 +35,24 @@ def main():
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # Load CFR+ model
-    print(f"Loading CFR+ model from {args.cfr_model}...")
+    print(f"Loading MCCFR model from {args.cfr_model}...")
     import pickle
     with open(args.cfr_model, 'rb') as f:
         data = pickle.load(f)
 
     solver = data['solver']
-    game = solver._game
+    game = data['game']
     avg_policy = solver.average_policy()
 
     print(f"Game: {game}")
-    print(f"CFR+ iterations: {data['iterations_done']}")
+    print(f"MCCFR iterations: {data['iterations_done']}")
 
-    # Use equity-based feature builder
     feature_names = get_feature_names()
     print(f"Features ({len(feature_names)}): {feature_names}")
 
     generator = DataGenerator(
         game, avg_policy,
-        feature_builder=build_features  # equity-based features
+        feature_builder=build_features
     )
 
     if args.traverse:
@@ -67,7 +65,6 @@ def main():
     print(f"Generated {X.shape[0]} samples with {X.shape[1]} features")
     print(f"Action distribution: {dict(zip(*np.unique(y, return_counts=True)))}")
 
-    # Save with feature names
     np.savez(args.output, X=X, y=y, feature_names=np.array(feature_names))
     print(f"Training data saved to {args.output}")
 
