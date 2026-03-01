@@ -173,6 +173,16 @@ def build_features_from_ui(hole_cards, board_card, pot, position, opp_r1, opp_r2
     else:
         features.append(0.0)
 
+    # is_suited
+    features.append(1.0 if hole_cards[0][1] == hole_cards[1][1] else 0.0)
+
+    # rank_gap (normalized)
+    gap = abs(hole_cards[0][0] - hole_cards[1][0])
+    features.append(gap / max(NUM_RANKS - 1, 1))
+
+    # is_facing_bet
+    features.append(1.0 if bet_to_call > 0 else 0.0)
+
     return np.array(features, dtype=np.float32), equity
 
 

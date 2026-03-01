@@ -34,6 +34,7 @@ FEATURE_NAMES = (
     + ["pot_odds", "stack_to_pot", "position"]
     + ["opp_aggression_r1", "opp_aggression_r2"]
     + ["hand_bucket", "has_pocket_pair", "max_hole_rank", "board_pairs_hole"]
+    + ["is_suited", "rank_gap", "is_facing_bet"]
 )
 
 
@@ -202,5 +203,21 @@ def build_features(state, player):
         features.append(1.0 if board_rank in hole_ranks else 0.0)
     else:
         features.append(0.0)
+
+    # 21. Is suited (both hole cards same suit)
+    if len(info["hole_cards"]) == 2:
+        features.append(1.0 if info["hole_cards"][0][1] == info["hole_cards"][1][1] else 0.0)
+    else:
+        features.append(0.0)
+
+    # 22. Rank gap (absolute difference between hole card ranks, normalized)
+    if len(info["hole_cards"]) == 2:
+        gap = abs(info["hole_cards"][0][0] - info["hole_cards"][1][0])
+        features.append(gap / max(NUM_RANKS - 1, 1))
+    else:
+        features.append(0.0)
+
+    # 23. Is facing a bet (binary — cleaner signal than pot_odds for tree splits)
+    features.append(1.0 if bet_to_call > 0 else 0.0)
 
     return np.array(features, dtype=np.float32)

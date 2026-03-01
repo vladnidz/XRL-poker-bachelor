@@ -35,8 +35,8 @@ def main():
         f"--iterations {args.iterations} "
         f"--checkpoint-every {max(1, args.iterations // 4)}")
 
-    # Step 2: Generate training data (full traversal for exact coverage)
-    run("python scripts/generate_data.py --traverse")
+    # Step 2: Generate training data via sampling
+    run("python scripts/generate_data.py --samples 50000")
 
     # Step 3: Train decision tree
     run(f"python scripts/train_tree.py --depth {args.depth} --depth-search")

@@ -98,8 +98,15 @@ class DataGenerator:
 
         return np.array(X), np.array(y)
 
-    def _generate_by_sampling(self, num_samples):
-        """Generate training data by sampling random game rollouts."""
+    def _generate_by_sampling(self, num_samples, use_argmax=True):
+        """Generate training data by sampling random game rollouts.
+
+        Args:
+            num_samples: number of rollouts
+            use_argmax: if True, label each state with the highest-probability
+                        action (deterministic). If False, sample from the
+                        policy distribution (stochastic).
+        """
         X = []
         y = []
         rng = np.random.default_rng(42)
@@ -130,7 +137,6 @@ class DataGenerator:
                         dtype=np.float32
                     )
 
-                # Sample action from the policy distribution
                 probs_list = [action_probs.get(a, 0.0) for a in legal_actions]
                 total = sum(probs_list)
                 if total > 0:
@@ -138,13 +144,18 @@ class DataGenerator:
                 else:
                     probs_list = [1.0 / len(legal_actions)] * len(legal_actions)
 
-                sampled_action = rng.choice(legal_actions, p=probs_list)
+                # Label: argmax (deterministic) or sampled (stochastic)
+                if use_argmax:
+                    best_idx = int(np.argmax(probs_list))
+                    label_action = legal_actions[best_idx]
+                else:
+                    label_action = rng.choice(legal_actions, p=probs_list)
 
-                # Record this decision point
                 X.append(features)
-                y.append(sampled_action)
+                y.append(label_action)
 
-                # Follow the sampled action
+                # Always follow the sampled action for rollout diversity
+                sampled_action = rng.choice(legal_actions, p=probs_list)
                 state.apply_action(sampled_action)
 
         return np.array(X), np.array(y)
