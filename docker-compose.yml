@@ -15,7 +15,7 @@ services:
     volumes:
       - ./models:/app/models
       - ./data:/app/data
-    command: python scripts/run_pipeline.py --iterations 200000 --depth 12
+    command: python scripts/run_pipeline.py --iterations 1000000 --depth 12
     profiles:
       - train
 

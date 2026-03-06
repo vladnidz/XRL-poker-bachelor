@@ -25,7 +25,7 @@ def run(cmd):
 
 def main():
     parser = argparse.ArgumentParser(description="Full XRL poker pipeline")
-    parser.add_argument("--iterations", type=int, default=200000)
+    parser.add_argument("--iterations", type=int, default=1000000)
     parser.add_argument("--depth", type=int, default=12)
     parser.add_argument("--eval-games", type=int, default=10000)
     args = parser.parse_args()

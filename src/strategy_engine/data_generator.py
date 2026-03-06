@@ -148,11 +148,15 @@ class DataGenerator:
                 if use_argmax:
                     best_idx = int(np.argmax(probs_list))
                     label_action = legal_actions[best_idx]
+                    confidence = probs_list[best_idx]
                 else:
                     label_action = rng.choice(legal_actions, p=probs_list)
+                    confidence = 1.0
 
-                X.append(features)
-                y.append(label_action)
+                # Skip ambiguous states where policy is near-uniform
+                if confidence >= 0.55:
+                    X.append(features)
+                    y.append(label_action)
 
                 # Always follow the sampled action for rollout diversity
                 sampled_action = rng.choice(legal_actions, p=probs_list)
