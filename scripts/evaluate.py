@@ -44,11 +44,17 @@ def play_game(game, tree_policy, feature_builder, opponent="random", rng=None):
         legal_actions = state.legal_actions(current_player)
 
         if current_player == 0:
-            # Tree agent -- use equity-based features
+            # Tree agent -- use equity-based features with exploitative play
             features = feature_builder(state, current_player)
+            proba = tree_policy.predict_proba(features)
             action = tree_policy.predict(features)
+
+            # Exploitative adjustment: if tree says fold but isn't confident,
+            # call instead (exploits random opponents who bet with weak hands)
+            if action == 0 and proba.get(0, 0) < 0.55:
+                action = 1  # call instead of fold
+
             if action not in legal_actions:
-                # Fallback: pick best legal action
                 action = legal_actions[-1] if len(legal_actions) > 1 else legal_actions[0]
         else:
             # Opponent
