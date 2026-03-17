@@ -49,9 +49,9 @@ def play_game(game, tree_policy, feature_builder, opponent="random", rng=None):
             proba = tree_policy.predict_proba(features)
             action = tree_policy.predict(features)
 
-            # Exploitative adjustment: if tree says fold but isn't confident,
+            # Exploitative adjustment: if tree says fold but isn't very confident,
             # call instead (exploits random opponents who bet with weak hands)
-            if action == 0 and proba.get(0, 0) < 0.55:
+            if action == 0 and proba.get(0, 0) < 0.80:
                 action = 1  # call instead of fold
 
             if action not in legal_actions:
