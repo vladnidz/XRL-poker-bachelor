@@ -41,7 +41,14 @@ def main():
         data = pickle.load(f)
 
     solver = data['solver']
-    game = data['game']
+    # Support both old and new save formats
+    if 'game' in data:
+        game = data['game']
+    elif 'game_string' in data:
+        import pyspiel
+        game = pyspiel.load_game(data['game_string'])
+    else:
+        game = solver._game
     avg_policy = solver.average_policy()
 
     print(f"Game: {game}")
