@@ -2,6 +2,15 @@
 
 import numpy as np
 
+# Features that are binary (0/1) and should use natural language
+BOOLEAN_FEATURES = {
+    "has_pocket_pair": ("had a pocket pair", "did not have a pocket pair"),
+    "is_suited": ("the hole cards were suited", "the hole cards were not suited"),
+    "is_facing_bet": ("facing a bet", "not facing a bet"),
+    "board_pairs_hole": ("the board paired a hole card", "the board did not pair a hole card"),
+    "position": ("in position (acting last)", "out of position (acting first)"),
+}
+
 
 class CounterfactualGenerator:
     """
@@ -84,12 +93,24 @@ class CounterfactualGenerator:
                     sibling_action, str(sibling_action)
                 )
 
-                if went_left:
-                    direction = "greater than"
-                    condition = f"{feature_name} were greater than {threshold:.4f}"
+                # Use natural language for boolean features
+                if feature_name in BOOLEAN_FEATURES:
+                    true_text, false_text = BOOLEAN_FEATURES[feature_name]
+                    if went_left:
+                        # Currently <=threshold (false), counterfactual is true
+                        condition = true_text
+                        direction = "true instead of false"
+                    else:
+                        # Currently >threshold (true), counterfactual is false
+                        condition = false_text
+                        direction = "false instead of true"
                 else:
-                    direction = "less than or equal to"
-                    condition = f"{feature_name} were less than or equal to {threshold:.4f}"
+                    if went_left:
+                        direction = "greater than"
+                        condition = f"{feature_name} were greater than {threshold:.2f}"
+                    else:
+                        direction = "less than or equal to"
+                        condition = f"{feature_name} were less than or equal to {threshold:.2f}"
 
                 statement = (
                     f"If {condition}, "

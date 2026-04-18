@@ -2,6 +2,7 @@
 
 import sys
 import os
+import random
 import numpy as np
 import streamlit as st
 
@@ -15,7 +16,7 @@ from src.explanation_engine.nl_generator import NLGenerator
 from src.game_environment.holdem_equity import (
     compute_equity_preflop, compute_equity_postflop,
     compute_future_equity_distribution, equity_deciles,
-    classify_hand, DISPLAY_RANKS, DISPLAY_SUITS,
+    classify_hand, compare_hands, hand_strength, DISPLAY_RANKS, DISPLAY_SUITS,
 )
 from config import NUM_RANKS, NUM_SUITS
 
@@ -80,6 +81,18 @@ CARD_CSS = """
     margin: 4px 0; overflow: hidden;
 }
 .equity-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.game-log {
+    background: #1a1a2e; color: #e0e0e0; padding: 12px; border-radius: 8px;
+    font-family: 'Consolas', monospace; font-size: 13px; max-height: 300px;
+    overflow-y: auto; margin: 8px 0;
+}
+.game-log .action-text { color: #4fc3f7; font-weight: bold; }
+.game-log .result-win { color: #66bb6a; font-weight: bold; }
+.game-log .result-lose { color: #ef5350; font-weight: bold; }
+.score-display {
+    font-size: 28px; font-weight: bold; text-align: center;
+    padding: 10px; border-radius: 8px; margin: 8px 0;
+}
 </style>
 """
 
@@ -90,6 +103,7 @@ SUITS = list(range(NUM_SUITS))
 RANK_LABELS = {r: DISPLAY_RANKS.get(r, str(r)) for r in RANKS}
 SUIT_SYMBOLS = {0: "\u2663", 1: "\u2666", 2: "\u2665", 3: "\u2660"}
 SUIT_COLORS = {0: "black", 1: "red", 2: "red", 3: "black"}
+ACTION_NAMES = {0: "fold", 1: "call/check", 2: "raise/bet"}
 
 
 def card_html(rank, suit):
@@ -125,8 +139,8 @@ def init_explainers(policy):
     }
 
 
-def build_features_from_ui(hole_cards, board_card, pot, position, opp_r1, opp_r2):
-    """Build feature vector from UI selections (matching holdem_features.py)."""
+def build_features(hole_cards, board_card, pot, position, opp_r1, opp_r2):
+    """Build feature vector from game state."""
     features = []
 
     if board_card is not None:
@@ -173,36 +187,446 @@ def build_features_from_ui(hole_cards, board_card, pot, position, opp_r1, opp_r2
     else:
         features.append(0.0)
 
-    # is_suited
     features.append(1.0 if hole_cards[0][1] == hole_cards[1][1] else 0.0)
 
-    # rank_gap (normalized)
     gap = abs(hole_cards[0][0] - hole_cards[1][0])
     features.append(gap / max(NUM_RANKS - 1, 1))
 
-    # is_facing_bet
     features.append(1.0 if bet_to_call > 0 else 0.0)
 
     return np.array(features, dtype=np.float32), equity
 
 
-def main():
-    st.markdown(CARD_CSS, unsafe_allow_html=True)
-    st.title("\u2660 Explainable Poker Agent")
-    st.caption("Reduced-Deck Heads-Up Limit Hold'em \u2014 AI explains every decision")
+# =====================================================================
+# GAME MODE
+# =====================================================================
 
-    policy = load_agent()
-    if policy is None:
-        st.warning(
-            "No trained model found. Run the training pipeline first:\n\n"
-            "```\ndocker compose --profile train run train\n```"
-        )
-        st.stop()
+def deal_new_game():
+    """Deal a fresh hand."""
+    deck = [(r, s) for r in RANKS for s in SUITS]
+    random.shuffle(deck)
+    hero_cards = (deck[0], deck[1])
+    opp_cards = (deck[2], deck[3])
+    board_card = deck[4]
+    # Player 0 = SB (out of position), Player 1 = BB
+    # Randomize who is dealer
+    hero_position = random.choice([0, 1])
+    return {
+        "hero_cards": hero_cards,
+        "opp_cards": opp_cards,
+        "board_card": board_card,
+        "hero_position": hero_position,  # 0=SB/OOP, 1=BB/IP
+        "pot": 3,  # SB(1) + BB(2)
+        "street": "preflop",
+        "hero_invested": 1 if hero_position == 0 else 2,
+        "opp_invested": 2 if hero_position == 0 else 1,
+        "actions_log": [],
+        "opp_aggression_r1": 0,
+        "opp_aggression_r2": 0,
+        "hero_aggression_r1": 0,
+        "hero_aggression_r2": 0,
+        "preflop_done": False,
+        "postflop_done": False,
+        "game_over": False,
+        "result": None,
+        "result_chips": 0,
+        "awaiting_hero": True,
+        "explanation": None,
+    }
 
-    explainers = init_explainers(policy)
-    action_names = policy.action_names or {0: "fold", 1: "call/check", 2: "raise/bet"}
 
-    # ===================== SIDEBAR =====================
+def ai_decide(policy, explainers, game):
+    """AI makes a decision and returns action + explanation."""
+    board = game["board_card"] if game["street"] == "postflop" else None
+    opp_r1 = game["hero_aggression_r1"]  # from AI's perspective, hero is its opponent
+    opp_r2 = game["hero_aggression_r2"]
+    ai_position = 1 - game["hero_position"]
+
+    features, equity = build_features(
+        game["opp_cards"], board, game["pot"], ai_position, opp_r1, opp_r2
+    )
+
+    action_id = policy.predict(features)
+    proba = policy.predict_proba(features)
+
+    shap_result = explainers["shap"].explain(features)
+    path_result = explainers["path"].extract(features)
+    cf_result = explainers["counterfactual"].generate(features)
+    nl_explanations = explainers["nl"].generate_all(
+        shap_result, path_result, cf_result, action_names=ACTION_NAMES
+    )
+
+    return {
+        "action_id": action_id,
+        "action_name": ACTION_NAMES.get(action_id, str(action_id)),
+        "proba": proba,
+        "equity": equity,
+        "shap_result": shap_result,
+        "path_result": path_result,
+        "cf_result": cf_result,
+        "explanation": nl_explanations,
+        "features": features,
+    }
+
+
+def apply_action(game, who, action_id):
+    """Apply an action to the game state. who='hero' or 'ai'."""
+    street = game["street"]
+    raise_size = 2 if street == "preflop" else 4
+    action_name = ACTION_NAMES.get(action_id, str(action_id))
+
+    if action_id == 0:  # fold
+        game["game_over"] = True
+        board = [game["board_card"]] if game["street"] == "postflop" else []
+        board_part = f" [Board: {card_label(*game['board_card'])}]" if board else ""
+        hero_h = card_label(*game["hero_cards"][0]) + card_label(*game["hero_cards"][1])
+        opp_h = card_label(*game["opp_cards"][0]) + card_label(*game["opp_cards"][1])
+        if board:
+            hero_combo = combo_name(game["hero_cards"], board, NUM_RANKS)
+            opp_combo = combo_name(game["opp_cards"], board, NUM_RANKS)
+        else:
+            hero_combo = None
+            opp_combo = None
+        if who == "hero":
+            game["result"] = "lose"
+            game["result_chips"] = -game["hero_invested"]
+            ai_desc = f"{opp_h}" + (f" - {opp_combo}" if opp_combo else "")
+            game["actions_log"].append(
+                f"You FOLD{board_part}. AI wins the pot ({game['pot']} chips). "
+                f"AI had: {ai_desc}.")
+        else:
+            game["result"] = "win"
+            game["result_chips"] = game["opp_invested"]
+            hero_desc = f"{hero_h}" + (f" - {hero_combo}" if hero_combo else "")
+            game["actions_log"].append(
+                f"AI FOLDS{board_part}. You win the pot ({game['pot']} chips)! "
+                f"Your hand: {hero_desc}.")
+        return
+
+    if action_id == 1:  # call/check
+        if who == "hero":
+            diff = game["opp_invested"] - game["hero_invested"]
+            if diff > 0:
+                game["hero_invested"] += diff
+                game["pot"] += diff
+                game["actions_log"].append(f"You CALL ({diff} chips).")
+            else:
+                game["actions_log"].append("You CHECK.")
+        else:
+            diff = game["hero_invested"] - game["opp_invested"]
+            if diff > 0:
+                game["opp_invested"] += diff
+                game["pot"] += diff
+                game["actions_log"].append(f"AI CALLS ({diff} chips).")
+            else:
+                game["actions_log"].append("AI CHECKS.")
+
+    elif action_id == 2:  # raise/bet
+        if who == "hero":
+            diff = game["opp_invested"] - game["hero_invested"]
+            game["hero_invested"] += diff + raise_size
+            game["pot"] += diff + raise_size
+            game["actions_log"].append(f"You RAISE (+{raise_size} chips).")
+            if street == "preflop":
+                game["hero_aggression_r1"] = 2
+            else:
+                game["hero_aggression_r2"] = 2
+        else:
+            diff = game["hero_invested"] - game["opp_invested"]
+            game["opp_invested"] += diff + raise_size
+            game["pot"] += diff + raise_size
+            game["actions_log"].append(f"AI RAISES (+{raise_size} chips).")
+            if street == "preflop":
+                game["opp_aggression_r1"] = 2
+            else:
+                game["opp_aggression_r2"] = 2
+
+    # Check if street is complete (both players acted, bets matched)
+    if game["hero_invested"] == game["opp_invested"]:
+        if street == "preflop" and not game["preflop_done"]:
+            # Preflop needs at least 2 actions total to be done
+            preflop_actions = sum(1 for a in game["actions_log"]
+                                  if "CHECK" in a or "CALL" in a or "FOLD" in a)
+            if preflop_actions >= 1 and action_id == 1:
+                game["preflop_done"] = True
+                if not game["game_over"]:
+                    game["street"] = "postflop"
+                    game["actions_log"].append("--- Community card dealt ---")
+                    game["awaiting_hero"] = (game["hero_position"] == 0)
+                    return
+        elif street == "postflop" and not game["postflop_done"]:
+            postflop_actions = sum(1 for a in game["actions_log"]
+                                   if "Community card" in a
+                                   for _ in [None])  # dummy
+            if action_id == 1:
+                game["postflop_done"] = True
+                go_to_showdown(game)
+                return
+
+    # After a raise, the other player needs to respond
+    if action_id == 2:
+        game["awaiting_hero"] = (who == "ai")
+    else:
+        game["awaiting_hero"] = (who == "ai")
+
+
+def combo_name(hole_cards, board_cards, num_ranks):
+    """Return human-readable hand combination name."""
+    cat, tiebreakers = hand_strength(hole_cards, board_cards, num_ranks)
+    rank_map = RANK_LABELS
+    if cat == 4:
+        r = rank_map[tiebreakers[0]]
+        return f"Three of a Kind ({r}s)"
+    elif cat == 3:
+        high = rank_map[tiebreakers[0]]
+        return f"Straight ({high}-high)"
+    elif cat == 2:
+        pair_rank = rank_map[tiebreakers[0]]
+        kicker = rank_map[tiebreakers[1]]
+        return f"Pair of {pair_rank}s ({kicker} kicker)"
+    else:
+        high = rank_map[tiebreakers[0]]
+        return f"High Card ({high})"
+
+
+def go_to_showdown(game):
+    """Resolve the hand at showdown."""
+    game["game_over"] = True
+    board = [game["board_card"]]
+    result = compare_hands(
+        game["hero_cards"], game["opp_cards"], board, NUM_RANKS
+    )
+    hero_h = card_label(*game["hero_cards"][0]) + card_label(*game["hero_cards"][1])
+    opp_h = card_label(*game["opp_cards"][0]) + card_label(*game["opp_cards"][1])
+    board_c = card_label(*game["board_card"])
+    hero_combo = combo_name(game["hero_cards"], board, NUM_RANKS)
+    opp_combo = combo_name(game["opp_cards"], board, NUM_RANKS)
+
+    if result > 0:
+        game["result"] = "win"
+        game["result_chips"] = game["opp_invested"]
+        game["actions_log"].append(
+            f"SHOWDOWN [Board: {board_c}]: You ({hero_h} - {hero_combo}) "
+            f"vs AI ({opp_h} - {opp_combo}) - YOU WIN! (+{game['opp_invested']} chips)")
+    elif result < 0:
+        game["result"] = "lose"
+        game["result_chips"] = -game["hero_invested"]
+        game["actions_log"].append(
+            f"SHOWDOWN [Board: {board_c}]: You ({hero_h} - {hero_combo}) "
+            f"vs AI ({opp_h} - {opp_combo}) - AI WINS. (-{game['hero_invested']} chips)")
+    else:
+        game["result"] = "tie"
+        game["result_chips"] = 0
+        game["actions_log"].append(
+            f"SHOWDOWN [Board: {board_c}]: You ({hero_h} - {hero_combo}) "
+            f"vs AI ({opp_h} - {opp_combo}) - TIE! (split pot)")
+
+
+def render_game_tab(policy, explainers):
+    """Render the interactive game tab."""
+    # Initialize session state
+    if "game" not in st.session_state:
+        st.session_state.game = None
+    if "total_chips" not in st.session_state:
+        st.session_state.total_chips = 0
+    if "hands_played" not in st.session_state:
+        st.session_state.hands_played = 0
+    if "ai_decision" not in st.session_state:
+        st.session_state.ai_decision = None
+
+    # Score display
+    chip_color = "#66bb6a" if st.session_state.total_chips >= 0 else "#ef5350"
+    st.markdown(
+        f'<div class="score-display">'
+        f'Hands: {st.session_state.hands_played} | '
+        f'Chips: <span style="color:{chip_color}">{st.session_state.total_chips:+d}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    col_deal, col_reset = st.columns(2)
+    with col_deal:
+        if st.button("Deal New Hand", type="primary", use_container_width=True, key="deal"):
+            st.session_state.game = deal_new_game()
+            st.session_state.ai_decision = None
+            # If AI acts first (hero is BB, AI is SB, SB acts first preflop)
+            game = st.session_state.game
+            if game["hero_position"] == 1:  # hero is BB, AI is SB, AI acts first
+                game["awaiting_hero"] = False
+            else:
+                game["awaiting_hero"] = True
+            st.rerun()
+    with col_reset:
+        if st.button("Reset Score", use_container_width=True, key="reset"):
+            st.session_state.total_chips = 0
+            st.session_state.hands_played = 0
+            st.session_state.game = None
+            st.session_state.ai_decision = None
+            st.rerun()
+
+    game = st.session_state.game
+    if game is None:
+        st.info("Click **Deal New Hand** to start playing!")
+        return
+
+    # If it's AI's turn, make AI act
+    if not game["game_over"] and not game["awaiting_hero"]:
+        decision = ai_decide(policy, explainers, game)
+        st.session_state.ai_decision = decision
+        apply_action(game, "ai", decision["action_id"])
+        if not game["game_over"]:
+            game["awaiting_hero"] = True
+
+    # --- Render the table ---
+    show_opp = game["game_over"]
+    if show_opp:
+        opp_cards_html = card_html(*game["opp_cards"][0]) + card_html(*game["opp_cards"][1])
+    else:
+        opp_cards_html = hidden_card_html() + hidden_card_html()
+
+    hero_cards_html = card_html(*game["hero_cards"][0]) + card_html(*game["hero_cards"][1])
+
+    if game["street"] == "postflop" or (game["game_over"] and game["preflop_done"]):
+        board_html = card_html(*game["board_card"])
+    else:
+        board_html = '<span style="color:#999; font-size:16px;">Preflop</span>'
+
+    pos_label = "BB (Big Blind)" if game["hero_position"] == 1 else "SB (Small Blind)"
+
+    board_list = [game["board_card"]] if game["street"] == "postflop" else []
+    bucket_name, _ = classify_hand(game["hero_cards"], board_list, NUM_RANKS)
+    hero_eq_board = game["board_card"] if game["street"] == "postflop" else None
+    if hero_eq_board:
+        hero_equity = compute_equity_postflop(game["hero_cards"], hero_eq_board, NUM_RANKS, NUM_SUITS)
+    else:
+        hero_equity = compute_equity_preflop(game["hero_cards"], NUM_RANKS, NUM_SUITS)
+
+    table_html = f"""
+    <div class="poker-table">
+        <div class="player-area">
+            <div class="opponent-label">AI AGENT</div>
+            {opp_cards_html}
+        </div>
+        <div class="board-area">
+            <div class="board-label">BOARD</div>
+            {board_html}
+            <div class="pot-display">Pot: {game['pot']} chips</div>
+        </div>
+        <div class="player-area">
+            <div class="player-label">YOU ({pos_label}) | Equity: {hero_equity:.0%} | {bucket_name.replace('_', ' ').title()}</div>
+            {hero_cards_html}
+        </div>
+    </div>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
+
+    # --- Action log ---
+    if game["actions_log"]:
+        log_html = '<div class="game-log">'
+        for entry in game["actions_log"]:
+            if "WIN" in entry or "win" in entry:
+                log_html += f'<div class="result-win">{entry}</div>'
+            elif "LOSE" in entry or "FOLD" in entry:
+                log_html += f'<div class="result-lose">{entry}</div>'
+            else:
+                log_html += f'<div>{entry}</div>'
+        log_html += '</div>'
+        st.markdown(log_html, unsafe_allow_html=True)
+
+    # --- Player actions ---
+    if not game["game_over"] and game["awaiting_hero"]:
+        st.markdown("**Your turn:**")
+        col_f, col_c, col_r = st.columns(3)
+        with col_f:
+            if st.button("FOLD", use_container_width=True, key="fold",
+                         type="secondary"):
+                apply_action(game, "hero", 0)
+                st.rerun()
+        with col_c:
+            diff = game["opp_invested"] - game["hero_invested"]
+            call_label = f"CALL ({diff})" if diff > 0 else "CHECK"
+            if st.button(call_label, use_container_width=True, key="call",
+                         type="primary"):
+                apply_action(game, "hero", 1)
+                st.rerun()
+        with col_r:
+            r_size = 2 if game["street"] == "preflop" else 4
+            if st.button(f"RAISE (+{r_size})", use_container_width=True,
+                         key="raise", type="secondary"):
+                apply_action(game, "hero", 2)
+                st.rerun()
+
+    # --- Game over ---
+    if game["game_over"]:
+        if game["result"] == "win":
+            st.success(f"You win! +{game['result_chips']} chips")
+        elif game["result"] == "lose":
+            st.error(f"You lose. {game['result_chips']} chips")
+        else:
+            st.info("Tie! Split pot.")
+
+        # Update score (only once)
+        if not game.get("scored"):
+            st.session_state.total_chips += game["result_chips"]
+            st.session_state.hands_played += 1
+            game["scored"] = True
+
+    # --- AI explanation (show after AI acted) ---
+    ai_dec = st.session_state.ai_decision
+    if ai_dec is not None:
+        with st.expander("AI's Reasoning (last action)", expanded=game["game_over"]):
+            action_css = {0: "action-fold", 1: "action-call", 2: "action-raise"}
+            badge_class = action_css.get(ai_dec["action_id"], "action-call")
+            st.markdown(
+                f'<div style="text-align:center">'
+                f'<div class="action-badge {badge_class}">'
+                f'AI: {ai_dec["action_name"].upper()}</div></div>',
+                unsafe_allow_html=True
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Action Probabilities:**")
+                for aid in sorted(ai_dec["proba"].keys()):
+                    aname = ACTION_NAMES.get(aid, str(aid))
+                    prob = ai_dec["proba"][aid]
+                    color = "#c62828" if aid == 0 else "#1565c0" if aid == 1 else "#2e7d32"
+                    st.markdown(
+                        f'<div style="margin:2px 0;">'
+                        f'<span style="width:90px;display:inline-block;">{aname}</span>'
+                        f'<b>{prob:.0%}</b>'
+                        f'<div class="equity-bar"><div class="equity-fill" '
+                        f'style="width:{prob*100:.0f}%;background:{color};"></div></div>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                st.markdown("**Top SHAP Features:**")
+                for feat in ai_dec["shap_result"]["top_features"]:
+                    fname = feat["feature"].replace("_", " ").title()
+                    sv = feat["shap_value"]
+                    color = "#2e7d32" if sv > 0 else "#c62828"
+                    arrow = "\u2191" if sv > 0 else "\u2193"
+                    st.markdown(
+                        f"**{fname}** = {feat['value']:.2f} "
+                        f"<span style='color:{color};font-weight:bold'>"
+                        f"{arrow} {sv:+.3f}</span>",
+                        unsafe_allow_html=True
+                    )
+
+            with col2:
+                st.markdown("**Full Explanation:**")
+                st.markdown(ai_dec["explanation"]["full"])
+
+
+# =====================================================================
+# ANALYZE MODE (original)
+# =====================================================================
+
+def render_analyze_tab(policy, explainers):
+    """Render the original analysis tab."""
+    action_names = policy.action_names or ACTION_NAMES
+
     st.sidebar.header("\u2660 Deal Cards")
 
     card_options = [(r, s) for r in RANKS for s in SUITS]
@@ -248,11 +672,10 @@ def main():
 
     analyze = st.sidebar.button("Analyze", type="primary", use_container_width=True)
 
-    # ===================== POKER TABLE =====================
-    features, equity = build_features_from_ui(hole_cards, board_card, pot, position, opp_r1, opp_r2)
+    features, equity = build_features(hole_cards, board_card, pot, position, opp_r1, opp_r2)
 
     opponent_cards = hidden_card_html() + hidden_card_html()
-    hero_cards = card_html(*hole_cards[0]) + card_html(*hole_cards[1])
+    hero_cards_html = card_html(*hole_cards[0]) + card_html(*hole_cards[1])
 
     if board_card is not None:
         board_html = card_html(*board_card)
@@ -261,7 +684,6 @@ def main():
         board_html = '<span style="color:#999; font-size:16px;">No board yet</span>'
         street = "Preflop"
 
-    # Hand bucket display
     board_list = [board_card] if board_card else []
     bucket_name, _ = classify_hand(hole_cards, board_list, NUM_RANKS)
     pos_label = "IP (Button)" if position == 1 else "OOP (Big Blind)"
@@ -279,13 +701,12 @@ def main():
         </div>
         <div class="player-area">
             <div class="player-label">YOU ({pos_label}) \u2022 Equity: {equity:.0%} \u2022 {bucket_name.replace('_', ' ').title()}</div>
-            {hero_cards}
+            {hero_cards_html}
         </div>
     </div>
     """
     st.markdown(table_html, unsafe_allow_html=True)
 
-    # ===================== ANALYSIS =====================
     if analyze:
         action_id = policy.predict(features)
         action_name = action_names.get(action_id, str(action_id))
@@ -352,6 +773,34 @@ def main():
                 st.text(f"  {name:25s} = {val:.4f}")
     else:
         st.info("Select cards and game state, then click **Analyze**.")
+
+
+# =====================================================================
+# MAIN
+# =====================================================================
+
+def main():
+    st.markdown(CARD_CSS, unsafe_allow_html=True)
+    st.title("\u2660 Explainable Poker Agent")
+    st.caption("Reduced-Deck Heads-Up Limit Hold'em \u2014 AI explains every decision")
+
+    policy = load_agent()
+    if policy is None:
+        st.warning(
+            "No trained model found. Run the training pipeline first:\n\n"
+            "```\ndocker compose --profile train run train\n```"
+        )
+        st.stop()
+
+    explainers = init_explainers(policy)
+
+    tab_play, tab_analyze = st.tabs(["Play vs AI", "Analyze Hand"])
+
+    with tab_play:
+        render_game_tab(policy, explainers)
+
+    with tab_analyze:
+        render_analyze_tab(policy, explainers)
 
     st.markdown("---")
     st.caption(

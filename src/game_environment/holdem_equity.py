@@ -13,7 +13,7 @@ ACPC_RANKS = "23456789TJQKA"
 ACPC_SUITS = "cdhs"
 
 # Display mapping for 6-rank and 3-rank decks
-RANK_NAMES_6 = {0: "9", 1: "T", 2: "J", 3: "Q", 4: "K", 5: "A"}
+RANK_NAMES_6 = {0: "9", 1: "10", 2: "J", 3: "Q", 4: "K", 5: "A"}
 RANK_NAMES_3 = {0: "J", 1: "Q", 2: "K"}
 
 DISPLAY_RANKS = RANK_NAMES_6
@@ -63,6 +63,10 @@ def hand_strength(hole_cards, board_cards, num_ranks):
     ranks = sorted([hole_cards[0][0], hole_cards[1][0], board_cards[0][0]],
                    reverse=True)
     unique_ranks = set(ranks)
+
+    # Three of a kind
+    if len(unique_ranks) == 1:
+        return (4, ranks)
 
     # Straight: all 3 ranks consecutive
     if len(unique_ranks) == 3 and ranks[0] - ranks[2] == 2:
