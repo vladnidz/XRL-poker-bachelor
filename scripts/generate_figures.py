@@ -294,6 +294,87 @@ def fig_opponent_comparison():
     print(f"  Saved: {path}")
 
 
+def fig_case_study_shap():
+    """Fig 4.7: SHAP attribution for 5 case study states."""
+    import json
+    print("Generating Fig 4.7: Case study SHAP bars...")
+
+    case_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "scripts", "case_study_data.json")
+    if not os.path.exists(case_path):
+        print("  SKIP: case_study_data.json not found")
+        return
+
+    with open(case_path) as f:
+        cases = json.load(f)
+
+    fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+    axes = axes.flatten()
+
+    for i, case in enumerate(cases):
+        ax = axes[i]
+        action  = case['action']
+        label   = case['label']
+        eq      = case['equity_pct']
+        conf    = int(case['confidence'] * 100)
+        shap_rows = case['shap_rows']
+
+        names  = [row[0] for row in shap_rows]
+        values = [row[2] for row in shap_rows]
+        colors = ['#2e7d32' if v > 0 else '#c62828' for v in values]
+
+        ax.barh(names, values, color=colors, edgecolor='white', linewidth=0.8)
+        ax.axvline(x=0, color='black', linewidth=0.8)
+        ax.set_title(f"State {i+1}: {action} ({conf}%)\n{label}\nEquity={eq}%",
+                     fontsize=8.5)
+        ax.set_xlabel('SHAP influence', fontsize=8)
+        ax.tick_params(labelsize=8)
+
+    axes[5].set_visible(False)
+
+    fig.suptitle('SHAP Feature Attribution — Five Case Study States\n'
+                 '(green = supports predicted action, red = opposes)',
+                 fontsize=12, fontweight='bold')
+    plt.tight_layout()
+    path = os.path.join(FIGURE_DIR, "fig4_7_case_study_shap.png")
+    plt.savefig(path, bbox_inches='tight')
+    plt.close()
+    print(f"  Saved: {path}")
+
+
+def fig_shap_consistency():
+    """Fig 4.8: Per-class SHAP consistency (mean pairwise cosine similarity)."""
+    print("Generating Fig 4.8: SHAP consistency by action class...")
+
+    classes = ['FOLD\n(Class 0)', 'CALL/CHECK\n(Class 1)', 'RAISE/BET\n(Class 2)']
+    consistency = [0.8263, 0.6929, 0.6708]
+    overall = 0.7300
+    colors = ['#c62828', '#1565c0', '#2e7d32']
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    bars = ax.bar(classes, consistency, color=colors, edgecolor='white',
+                  linewidth=1.5, width=0.5)
+
+    for bar, val in zip(bars, consistency):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 0.5,
+                f'{val:.3f}', ha='center', va='center',
+                fontsize=12, fontweight='bold', color='white')
+
+    ax.axhline(y=overall, color='black', linestyle='--', linewidth=1.2,
+               alpha=0.7, label=f'Overall mean = {overall:.2f}')
+    ax.set_ylim(0, 1.0)
+    ax.set_ylabel('Mean Pairwise Cosine Similarity')
+    ax.set_title('SHAP Consistency per Action Class\n'
+                 '(n = 500 states/class, 200 random pairs, RandomState=42)')
+    ax.legend()
+
+    plt.tight_layout()
+    path = os.path.join(FIGURE_DIR, "fig4_8_shap_consistency.png")
+    plt.savefig(path, bbox_inches='tight')
+    plt.close()
+    print(f"  Saved: {path}")
+
+
 def fig_tree_top_levels():
     """Fig 3.2: Top 4 levels of the decision tree (partial visualization)."""
     print("Generating Fig 3.2: Decision tree (top levels)...")
@@ -332,6 +413,8 @@ def main():
     fig_confusion_matrix()
     fig_shap_importance()
     fig_opponent_comparison()
+    fig_case_study_shap()
+    fig_shap_consistency()
     fig_tree_top_levels()
 
     print(f"\nAll figures saved to {FIGURE_DIR}/")
