@@ -1,0 +1,262 @@
+[
+  {
+    "label": "Clear fold \u2014 low equity",
+    "equity_pct": 32,
+    "pot_odds": 0.09285714477300644,
+    "position": "OOP (first to act)",
+    "action": "FOLD",
+    "confidence": 0.7531994056953472,
+    "shap_rows": [
+      [
+        "Equity",
+        0.3279220759868622,
+        0.19690120662752195,
+        "supports"
+      ],
+      [
+        "Future Equity Decile 2",
+        0.1428571492433548,
+        0.11251230971644964,
+        "supports"
+      ],
+      [
+        "Min Hole Card Rank",
+        0.800000011920929,
+        -0.08732333203744007,
+        "opposes"
+      ]
+    ],
+    "path": [
+      "Equity <= 0.6025",
+      "Pot Odds <= 0.1524",
+      "Opponent Aggression (Round 2) > 0.3445",
+      "Position <= 0.2976",
+      "Future Equity Decile 5 > 0.5000",
+      "Future Equity Decile 2 > 0.1270",
+      "Min Hole Card Rank > 0.3000",
+      "Position > 0.0857",
+      "Future Equity Decile 2 <= 0.1714",
+      "Suited Hole Cards <= 0.2095",
+      "Max Hole Card Rank <= 0.5000"
+    ],
+    "path_str": "Equity <= 0.6025 => Pot Odds <= 0.1524 => Opponent Aggression (Round 2) > 0.3445 => Position <= 0.2976 => Future Equity Decile 5 > 0.5000 => Future Equity Decile 2 > 0.1270 => ...",
+    "cf": [
+      "Future Equity Decile 2",
+      0.1428571492433548,
+      0.1268841305911541,
+      "FOLD",
+      "CALL/CHECK",
+      "less than",
+      0.1269841305911541
+    ],
+    "pred_class": 0
+  },
+  {
+    "label": "Call \u2014 medium equity, in position",
+    "equity_pct": 47,
+    "pot_odds": 0.0,
+    "position": "OOP (first to act)",
+    "action": "CALL/CHECK",
+    "confidence": 0.8347784580404967,
+    "shap_rows": [
+      [
+        "Future Equity Decile 2",
+        0.0,
+        0.24363824070473789,
+        "supports"
+      ],
+      [
+        "Opponent Aggression (Round 2)",
+        0.0,
+        0.07519501339309481,
+        "supports"
+      ],
+      [
+        "Equity",
+        0.47857141494750977,
+        0.08671436714213213,
+        "supports"
+      ]
+    ],
+    "path": [
+      "Equity <= 0.6025",
+      "Pot Odds <= 0.1524",
+      "Opponent Aggression (Round 2) <= 0.3445",
+      "Future Equity Decile 2 <= 0.1181",
+      "future_eq_d7 <= 2.5000",
+      "future_eq_d6 <= 1.5000",
+      "Min Hole Card Rank > 0.5000",
+      "Equity > 0.0643",
+      "Future Equity Decile 5 <= 1.5000",
+      "Min Hole Card Rank <= 0.9000",
+      "Equity > 0.1595",
+      "Min Hole Card Rank <= 0.7000"
+    ],
+    "path_str": "Equity <= 0.6025 => Pot Odds <= 0.1524 => Opponent Aggression (Round 2) <= 0.3445 => Future Equity Decile 2 <= 0.1181 => future_eq_d7 <= 2.5000 => future_eq_d6 <= 1.5000 => ...",
+    "cf": [
+      "Equity",
+      0.47857141494750977,
+      0.06418571604192257,
+      "CALL/CHECK",
+      "RAISE/BET",
+      "less than",
+      0.06428571604192257
+    ],
+    "pred_class": 1
+  },
+  {
+    "label": "Call \u2014 decent equity, passive opponent",
+    "equity_pct": 67,
+    "pot_odds": 0.3976190388202667,
+    "position": "OOP (first to act)",
+    "action": "CALL/CHECK",
+    "confidence": 1.0,
+    "shap_rows": [
+      [
+        "Hand Strength Bucket",
+        1.0,
+        0.2987104390800949,
+        "supports"
+      ],
+      [
+        "Future Equity Decile 5",
+        2.0,
+        0.19025122795445737,
+        "supports"
+      ],
+      [
+        "Future Equity Decile 2",
+        0.1111111119389534,
+        0.1632180181354873,
+        "supports"
+      ]
+    ],
+    "path": [
+      "Equity > 0.6025",
+      "Equity <= 0.9071",
+      "Opponent Aggression (Round 1) <= 0.9536",
+      "Future Equity Decile 5 > 0.5000",
+      "future_eq_d7 > 2.5000",
+      "Future Equity Decile 2 <= 0.1339",
+      "Hand Strength Bucket > 0.5000",
+      "hole_rank1 > 0.2655"
+    ],
+    "path_str": "Equity > 0.6025 => Equity <= 0.9071 => Opponent Aggression (Round 1) <= 0.9536 => Future Equity Decile 5 > 0.5000 => future_eq_d7 > 2.5000 => Future Equity Decile 2 <= 0.1339 => ...",
+    "cf": [
+      "Hand Strength Bucket",
+      1.0,
+      0.4999,
+      "CALL/CHECK",
+      "RAISE/BET",
+      "less than",
+      0.5
+    ],
+    "pred_class": 1
+  },
+  {
+    "label": "Raise \u2014 high equity, favorable pot odds",
+    "equity_pct": 76,
+    "pot_odds": 0.7023809552192688,
+    "position": "IP (last to act)",
+    "action": "RAISE/BET",
+    "confidence": 0.9057510060508841,
+    "shap_rows": [
+      [
+        "Equity",
+        0.7632034420967102,
+        0.24050795357370902,
+        "supports"
+      ],
+      [
+        "Future Equity Decile 2",
+        0.20000000298023224,
+        0.1834626235468281,
+        "supports"
+      ],
+      [
+        "Pot Odds",
+        0.7023809552192688,
+        0.10996883108462607,
+        "supports"
+      ]
+    ],
+    "path": [
+      "Equity > 0.6025",
+      "Equity <= 0.9071",
+      "Opponent Aggression (Round 1) <= 0.9536",
+      "Future Equity Decile 5 > 0.5000",
+      "future_eq_d7 > 2.5000",
+      "Future Equity Decile 2 > 0.1339",
+      "Equity > 0.7095",
+      "Min Hole Card Rank <= 0.5000",
+      "Future Equity Decile 5 > 1.5000",
+      "future_eq_d9 > 0.5000",
+      "future_eq_d9 <= 0.9000",
+      "Future Equity Decile 2 > 0.1548"
+    ],
+    "path_str": "Equity > 0.6025 => Equity <= 0.9071 => Opponent Aggression (Round 1) <= 0.9536 => Future Equity Decile 5 > 0.5000 => future_eq_d7 > 2.5000 => Future Equity Decile 2 > 0.1339 => ...",
+    "cf": [
+      "future_eq_d7",
+      5.0,
+      2.4999,
+      "RAISE/BET",
+      "CALL/CHECK",
+      "less than",
+      2.5
+    ],
+    "pred_class": 2
+  },
+  {
+    "label": "Raise \u2014 moderate equity, aggressive spot",
+    "equity_pct": 64,
+    "pot_odds": 0.0,
+    "position": "OOP (first to act)",
+    "action": "RAISE/BET",
+    "confidence": 0.6514259881740395,
+    "shap_rows": [
+      [
+        "Equity",
+        0.6476190686225891,
+        0.1459500006610555,
+        "supports"
+      ],
+      [
+        "Future Equity Decile 2",
+        0.0,
+        -0.0007755564478062153,
+        "opposes"
+      ],
+      [
+        "future_eq_d7",
+        6.0,
+        0.08719440318423395,
+        "supports"
+      ]
+    ],
+    "path": [
+      "Equity > 0.6025",
+      "Equity <= 0.9071",
+      "Opponent Aggression (Round 1) <= 0.9536",
+      "Future Equity Decile 5 > 0.5000",
+      "future_eq_d7 > 2.5000",
+      "Future Equity Decile 2 <= 0.1339",
+      "Hand Strength Bucket <= 0.5000",
+      "future_eq_d6 <= 0.5000",
+      "Suited Hole Cards <= 0.7929",
+      "hole_rank2 <= 0.6976",
+      "future_eq_d7 > 4.0000",
+      "Equity <= 0.7000"
+    ],
+    "path_str": "Equity > 0.6025 => Equity <= 0.9071 => Opponent Aggression (Round 1) <= 0.9536 => Future Equity Decile 5 > 0.5000 => future_eq_d7 > 2.5000 => Future Equity Decile 2 <= 0.1339 => ...",
+    "cf": [
+      "future_eq_d7",
+      6.0,
+      3.9999,
+      "RAISE/BET",
+      "CALL/CHECK",
+      "less than",
+      4.0
+    ],
+    "pred_class": 2
+  }
+]
