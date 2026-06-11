@@ -449,3 +449,21 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# ───────────────────────────────────────────────────────────────
+# Thesis & presentation artifacts (kept locally, not committed)
+# ───────────────────────────────────────────────────────────────
+*.docx
+*.pdf
+*.pptx
+pptxs/
+
+# Thesis document & presentation generation scripts (local only)
+scripts/build_ai_appendix.py
+scripts/build_thesis_supplement.py
+scripts/fix_final_docx.py
+scripts/make_presentation.py
+scripts/make_defence_pptx.py
+scripts/capture_app_screenshot.py
+scripts/insert_figures.py
+scripts/update_thesis3.py
